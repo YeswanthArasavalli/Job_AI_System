@@ -1,0 +1,21 @@
+# Core
+pyyaml>=6.0
+pydantic>=2.0
+ollama>=0.3.0
+rich>=13.0
+
+# PDF Generation
+fpdf2>=2.7.0
+
+# Web Scraping
+playwright>=1.40.0
+
+# Dashboard
+streamlit>=1.30.0
+
+# Resume Parsing (optional — install if uploading PDF/DOCX resumes)
+pdfplumber>=0.10.0
+python-docx>=1.0.0
+
+# Semantic Embeddings (optional — enhances matching accuracy)
+# sentence-transformers>=2.2.0

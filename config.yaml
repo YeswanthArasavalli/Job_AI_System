@@ -1,0 +1,71 @@
+# ============================================================
+# Job AI System — Global Configuration
+# ============================================================
+
+# --- LLM Configuration ---
+llm:
+  provider: "ollama"
+  model: "qwen2.5-coder:3b"
+  base_url: "http://localhost:11434"
+  timeout: 120  # seconds
+  temperature: 0.0   # DETERMINISTIC: same input → same output
+  top_p: 0.9
+  seed: 42           # Fixed seed for reproducibility
+  max_retries: 3
+
+# --- Resume Engine ---
+resume_engine:
+  master_resume_path: "data/master_resume.json"
+  output_dir: "output/resumes"
+  max_skills: 15
+  max_experience_bullets: 5
+
+# --- ATS Scoring (Phase 2) ---
+ats_scoring:
+  weights:
+    keyword_match: 0.30
+    skills_match: 0.25
+    experience_relevance: 0.25
+    role_alignment: 0.05
+    education_fit: 0.05
+    resume_structure: 0.10
+
+# --- PDF Generator (Phase 3) ---
+pdf_generator:
+  output_dir: "output/pdfs"
+  font_family: "Helvetica"
+  font_size: 10
+  margin: 20
+
+# --- Scraper (Phase 4) ---
+scraper:
+  platform: "linkedin"  # linkedin | naukri
+  max_jobs: 25
+  headless: false
+  login_wait_seconds: 60
+  scroll_pause: 2
+  user_data_dir: "browser_data"
+
+# --- Database (Phase 6) ---
+database:
+  path: "data/job_ai_system.db"
+
+# --- Logging ---
+logging:
+  level: "INFO"
+  log_file: "logs/system.log"
+  max_bytes: 5242880  # 5MB
+  backup_count: 3
+
+# --- User Preferences (Phase 7) ---
+user_preferences:
+  preferred_roles:
+    - "Data Analyst"
+    - "Data Engineer"
+    - "Backend Engineer"
+  skill_priority:
+    - "Python"
+    - "SQL"
+    - "AWS"
+  min_score_threshold: 40      # Below this → auto SKIP
+  excluded_companies: []       # Companies to always skip

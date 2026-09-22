@@ -1,0 +1,315 @@
+# 🎯 AI Job Application Intelligence System
+
+An end-to-end, production-grade AI system that **automatically tailors your resume to any job description**, scores it against ATS filters, estimates your shortlist probability, and tells you exactly what to fix — all powered by a **local LLM** with zero API costs.
+
+---
+
+## ✨ Features
+
+### Core Pipeline
+- **🤖 LLM-Powered Resume Tailoring** — Automatically rewrites your resume to match each JD using Ollama (local, private, free)
+- **📊 ATS Scoring Engine (v3.1)** — 6-dimension scoring with semantic dampening, nonlinear penalties, and transferable skill credits
+- **🎯 Multi-Signal Decision Engine** — APPLY / MAYBE / SKIP decisions using ATS score × semantic alignment × skill coverage
+- **📈 Shortlist Probability Engine** — Calibrated real-world probability with confidence bands (STRONG MATCH → UNLIKELY)
+- **🧠 Semantic Matching** — TF-IDF + phrase normalization + optional embedding similarity (MiniLM)
+- **📝 Resume Naturalization** — Makes LLM output sound human-written while preserving ATS keywords
+
+### Intelligence Layer
+- **🔍 JD Processor** — Cleans noise, extracts skills, detects sections, measures quality
+- **📚 Learning Engine** — Tracks skill gaps, penalty patterns, and score trends across all jobs
+- **🎯 Strategy Engine** — ROI-ranked skill recommendations with quick wins and project suggestions
+- **📅 Flow Engine** — Daily action plans: which jobs to apply for, which skills to learn next
+
+### User Features
+- **📝 Manual Analysis Mode** — Upload any resume (PDF/DOCX/JSON) + paste any JD → full pipeline analysis
+- **🌐 LinkedIn Scraper** — Automated job scraping with anti-bot mitigation and fallback selectors
+- **📦 Export** — CSV data dumps + PDF summary reports
+- **🖥️ 8-Page Streamlit Dashboard** — Real-time analytics, rankings, strategy, and interactive analysis
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    INPUT LAYER                               │
+│  LinkedIn Scraper ← → Manual Mode (PDF/DOCX/JSON + JD)     │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  PROCESSING PIPELINE                         │
+│  JD Processor → Resume Engine (LLM) → Naturalizer          │
+│       → ATS Scorer → Probability Engine → Decision          │
+│       → PDF Generator                                       │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 INTELLIGENCE LAYER                            │
+│  Feedback Engine → Strategy Engine → Flow Engine            │
+│  Job Ranker → Insights                                      │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   OUTPUT LAYER                               │
+│  Streamlit Dashboard (8 pages) ← → CSV/PDF Export           │
+│  SQLite Database (versioned)                                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🛠️ Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Language | Python 3.11+ |
+| LLM | Ollama (local, private — qwen2.5-coder:3b default) |
+| Database | SQLite with WAL mode |
+| Dashboard | Streamlit |
+| Scraping | Playwright |
+| PDF Generation | fpdf2 |
+| Resume Parsing | pdfplumber, python-docx |
+| Semantic Matching | TF-IDF + optional sentence-transformers |
+| Data Models | Pydantic v2 |
+
+**No API keys. No cloud. Everything runs locally.**
+
+---
+
+## 🚀 Quick Start
+
+### 1. Clone & Install
+
+```bash
+git clone https://github.com/your-username/job-ai-system.git
+cd job-ai-system
+python -m venv .venv
+.venv/Scripts/activate  # Windows
+# source .venv/bin/activate  # Linux/Mac
+pip install -r requirements.txt
+```
+
+### 2. Start Ollama
+
+```bash
+ollama serve
+ollama pull qwen2.5-coder:3b
+```
+
+### 3. Configure
+
+Edit `config.yaml`:
+```yaml
+llm:
+  model: "qwen2.5-coder:3b"
+
+resume_engine:
+  master_resume_path: "data/master_resume.json"
+
+user_preferences:
+  preferred_roles: ["Data Analyst", "Backend Engineer"]
+  skill_priority: ["Python", "SQL", "AWS"]
+  min_score_threshold: 40
+```
+
+### 4. Run Dashboard
+
+```bash
+streamlit run dashboard.py
+```
+
+Open `http://localhost:8501` → Navigate to **📝 Analyze Resume** → Paste a JD → Click **🚀 Run Analysis**.
+
+### 5. Run Pipeline (CLI)
+
+```bash
+python main.py
+```
+
+---
+
+## 📊 Dashboard Pages
+
+| Page | Description |
+|------|-------------|
+| 📊 **Overview** | KPIs, decision breakdown, score performance |
+| 📋 **Job Table** | Filterable job list with before/after scores |
+| 🏆 **Rankings** | Composite-ranked jobs with expandable details |
+| 🧠 **Skill Gaps** | Top missing skills with frequency bars |
+| 🎯 **Strategy** | ROI-ranked learning plan with quick wins |
+| 📅 **Today's Plan** | Daily action items and priority jobs |
+| 📝 **Analyze Resume** | Upload resume + paste JD → instant analysis |
+| 🔍 **Job Details** | Per-job deep dive with probability gauge |
+
+---
+
+## 📄 Example Output
+
+For a Data Analyst role at Acme Corp:
+
+```
+Score:      52.5 → 61.6 (+9)
+Decision:   MAYBE
+Probability: 18.2% (COMPETITIVE, confidence: MEDIUM)
+Semantic:   28.5%
+
+Positive: Moderate ATS score
+Negative: Missing core skills: tableau, a/b testing
+          Low semantic alignment
+
+Matched:  python, sql, pandas, data analysis
+Missing:  tableau, power bi, a/b testing, statistical analysis
+
+Recommendations:
+  - Add missing keywords: tableau, a/b testing
+  - Strengthen data visualization experience
+```
+
+---
+
+## 🔧 Project Structure
+
+```
+job_ai_system/
+├── config.yaml              # Global configuration
+├── main.py                  # CLI entry point
+├── dashboard.py             # Streamlit UI (8 pages)
+├── manual_mode.py           # Manual analysis backend
+├── requirements.txt
+│
+├── resume_engine/           # LLM tailoring + naturalization
+├── resume_parser/           # PDF/DOCX/JSON parsing
+├── ats_scoring/             # Scoring + probability + semantics
+├── jd_processor/            # JD cleaning + skill extraction
+├── pdf_generator/           # ATS-friendly PDF output
+├── scraper/                 # LinkedIn scraper (Playwright)
+├── pipeline/                # Orchestration (parallel + retry)
+├── database/                # SQLite persistence + versioning
+├── insights/                # Ranking + flow engine
+├── learning/                # Feedback + strategy
+├── export/                  # CSV + PDF reports
+└── utils/                   # Config, models, logging
+```
+
+---
+
+## How Scoring Works
+
+### ATS Score (6 dimensions)
+
+| Dimension | Weight |
+|-----------|--------|
+| Keyword Match | 30% |
+| Skills Match | 25% |
+| Experience Relevance | 20% |
+| Role Alignment | 10% |
+| Education Fit | 5% |
+| Resume Structure | 10% |
+
+### Intelligence Mechanisms
+- **Semantic Dampening**: Low semantic coverage reduces score proportionally
+- **Nonlinear Experience Penalty**: `ratio^1.5` (big gaps hurt more than small ones)
+- **Transferable Skill Credits**: Related skills get 50-70% credit (e.g., PyTorch counts toward "ML frameworks")
+- **Critical Skill Capping**: Missing >60% required skills caps score at 40
+
+### Decision Matrix
+```
+APPLY:   High ATS (65+) AND (high semantic OR good skill coverage)
+MAYBE:   Moderate ATS (45+) AND (moderate semantic OR good skills)
+IMPROVE: Below thresholds — system suggests specific next steps
+```
+
+The system never hard-rejects. It acts as a **career assistant**, always providing actionable improvement suggestions.
+
+### Example Output
+```
+Score:       29 -> 55  (+26)
+Status:      IMPROVED
+Decision:    IMPROVE
+Reason:      Strong Python base, but missing MLOps + SQL depth
+
+Next Steps:
+  1. Highlight experience with: tableau, statistical analysis
+  2. Align resume bullet points more closely with JD language
+  3. Consider adding relevant project work or certifications
+```
+
+The score improved from 29 to 55 through better keyword alignment and rephrasing — **no fake skills were added**.
+
+---
+
+## Shortlist Probability
+
+**Heuristic-based estimation** of interview chances (not a guarantee):
+- **40% ATS score** + **25% semantic** + **20% skill coverage** + **15% experience** - risk deductions
+- Score caps: ATS < 50 → probability capped at 30%
+- Bands: `STRONG MATCH` / `COMPETITIVE` / `POSSIBLE` / `UNLIKELY`
+
+> **Note:** Probability is a heuristic estimate based on resume-JD alignment signals. It does not account for factors like company hiring volume, internal referrals, or recruiter preferences. Use it as directional guidance, not a prediction.
+
+---
+
+## Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Rule-based ATS** | Deterministic, explainable, no training data needed. ML-based scoring would require labeled hiring outcome data we don't have. |
+| **Local LLM (Ollama)** | Privacy-first — resumes never leave your machine. Zero API costs. Works offline. |
+| **SQLite** | Zero-config, file-based, perfect for single-user desktop app. WAL mode handles concurrent reads. |
+| **Career assistant, not filter** | System uses IMPROVE instead of SKIP — always provides actionable next steps rather than rejection. |
+| **Heuristic probability** | Honest about limitations — estimates based on signal alignment, not trained on hiring outcomes. |
+| **Optional embeddings** | MiniLM adds ~80MB. System works fine without it (TF-IDF fallback), so it's opt-in. |
+
+---
+
+## Limitations
+
+> These are important to understand before relying on the system.
+
+- **Heuristic probability**: The shortlist probability is a weighted signal estimate, not a statistical prediction trained on real hiring data.
+- **LLM variability**: Local LLM outputs can vary between runs. Caching mitigates this for repeated analyses.
+- **Scraper instability**: LinkedIn actively blocks automated scraping. The scraper uses anti-bot mitigation but may break with site changes.
+- **Single-resume focus**: The system optimizes one resume at a time. It doesn't A/B test multiple resume variants.
+- **No interview prediction**: Scoring reflects resume-JD text alignment only. It cannot predict interviewer preferences, company culture fit, or internal hiring dynamics.
+
+---
+
+## Why This System?
+
+| Feature | Job AI System | Generic Tools |
+|---------|:---:|:---:|
+| Local & Private | Yes | No (cloud APIs) |
+| Free | Yes | No (paid) |
+| Resume Tailoring | Auto | Manual |
+| ATS Simulation | 6-dimension | Basic |
+| Career Assistant | IMPROVE suggestions | Pass/Fail only |
+| Skill Gap Analysis | Yes | No |
+| Career Strategy | Yes | No |
+| Resume Download | TXT + JSON | No |
+| Daily Action Plans | Yes | No |
+
+---
+
+## Future Improvements
+
+- [ ] Naukri / Indeed scraper support
+- [ ] Custom PDF resume templates
+- [ ] Interview question generator from JD
+- [ ] A/B testing of resume variations
+- [ ] Cover letter generation
+- [ ] Multi-language resume support
+
+---
+
+## Stats
+
+- **~7,200 lines of Python**
+- **39 modules across 19 packages**
+- **8-page interactive dashboard**
+- **Zero cloud dependencies**
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
