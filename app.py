@@ -256,33 +256,25 @@ def parse_resume_text(text: str) -> StructuredResume:
 
 
 def run_analysis(resume: StructuredResume, jd: ExtractedJD, mode: str):
-    """Run the UNIFIED career decision pipeline.
-    
-    SINGLE SOURCE OF TRUTH: calls run_full_pipeline() and extracts
-    ALL results from the pipeline output. ZERO custom logic.
-    
-    app.py == dashboard.py == same pipeline == identical outputs.
+    """Run the CANONICAL career decision pipeline (Phase 3 service).
+
+    app.py consumes pipeline.service.analyze() — the single application-level
+    entry point shared with the dashboard. Display-only enrichment below is
+    derived from PipelineResult fields, never recomputed.
     """
+    from pipeline.service import analyze
     scorer = ATSScorer()
-    
+
     # Score original BEFORE pipeline (for delta display only)
     score_before, _, _ = scorer.score(resume, jd)
     q_before = evaluate_resume_quality(resume, jd)
     orig_bullets = [b for e in resume.experience for b in e.bullets]
-    
+
     # ============================================================
-    # SINGLE SOURCE OF TRUTH — run_full_pipeline()
-    # Includes: naturalize, role classify, improve, summary engine,
-    #           polish, trust validate, validation gate,
-    #           hiring simulation, perception, interpretation
+    # CANONICAL ENGINE — one service, all surfaces
     # ============================================================
-    pipeline_result = run_full_pipeline(
-        original=resume,
-        tailored=copy.deepcopy(resume),
-        extracted_jd=jd,
-        scorer=scorer,
-        job_id="app_analysis",
-        mode=mode,
+    pipeline_result = analyze(
+        resume, jd, mode=mode, job_id="app_analysis",
     )
     
     improved = pipeline_result.improved

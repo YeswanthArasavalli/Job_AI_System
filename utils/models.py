@@ -129,6 +129,8 @@ class ATSScoreReport(BaseModel):
     penalties_applied: List[str] = Field(default_factory=list)
     decision: str = "APPLY_WITH_FIXES"  # DO_NOT_APPLY / IMPROVE / APPLY_WITH_FIXES / APPLY
     semantic_score: float = 0.0  # TF-IDF cosine similarity (0-100)
+    raw_semantic_score: float = 0.0  # Phase 4: pre-adjustment semantic measurement
+    semantic_adjustments: List[str] = Field(default_factory=list)  # Phase 4: disclosed policy adjustments
     effort_level: str = "MEDIUM"  # LOW / MEDIUM / HIGH -- effort needed to match
     shortlist_probability: dict = Field(default_factory=dict)  # Probability engine output
     role_fit: dict = Field(default_factory=dict)  # Role fit assessment (Part 8)

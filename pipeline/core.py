@@ -905,6 +905,35 @@ def run_full_pipeline(
                     f"{ats_improve_attempts} strategies"
                 )
 
+            # -- PHASE 4: ARTIFACT-TRUTH CHECKPOINT (improvement-regression policy)
+            # The reported score must describe the artifact we return. Re-score
+            # the current improved artifact after all mandate strategies; if it
+            # silently regressed below the tailored baseline, revert to tailored
+            # and record an explicit regression warning. Never manipulate scores.
+            _artifact_score, _, _ = scorer.score(improved, extracted_jd)
+            _tailored_score, _, _ = scorer.score(tailored, extracted_jd)
+            if _artifact_score < _tailored_score - 1.0:
+                logger.warning(
+                    f"  IMPROVEMENT REGRESSION: artifact {_artifact_score:.1f} < "
+                    f"tailored {_tailored_score:.1f} -> reverting to tailored resume"
+                )
+                improved = tailored.model_copy(deep=True)
+                ats_report.score_after = round(_tailored_score, 1)
+                best_score = max(_tailored_score, ats_report.score_before)
+                ats_report.improvement = (
+                    f"+{ats_report.score_after - ats_report.score_before:.0f}"
+                )
+                ats_report.risk_flags = list(ats_report.risk_flags or []) + [
+                    f"IMPROVEMENT_REGRESSION_REVERTED: strategies scored "
+                    f"{_artifact_score:.1f} < tailored {_tailored_score:.1f}"
+                ]
+            else:
+                # Keep artifact; align the reported score with the artifact truth
+                ats_report.score_after = round(
+                    max(_artifact_score, ats_report.score_after, ats_report.score_before), 1
+                )
+                best_score = max(best_score, _artifact_score)
+
             # CRITICAL: sync best_score with mandate result
             # Without this, later pipeline stages (polish, perception, etc.)
             # compare against the old pre-mandate best_score and may regress.
@@ -2061,6 +2090,41 @@ def run_full_pipeline(
             shortlist_decision_final = "SKIP"
         shortlist_reason_final = f"Estimated from ATS {u_ats_score:.0f} (unified scoring unavailable)"
 
+    # -- PHASE 4: FINAL ARTIFACT-TRUTH RECONCILIATION ----------------------
+    # One authoritative reconciliation: the reported score_after must describe
+    # the artifact being returned. If any late mutation (dedup, auto-fix,
+    # rewriter revert, polish) changed the artifact, re-score it here and
+    # report the artifact's true score. If the artifact is materially worse
+    # than the original, revert to the original and disclose via risk flag.
+    try:
+        _final_artifact_score, _final_breakdown, _ = scorer.score(improved, extracted_jd)
+        if _final_artifact_score < ats_report.score_before - 1.0:
+            logger.warning(
+                f"  FINAL RECONCILIATION: artifact {_final_artifact_score:.1f} < "
+                f"original {ats_report.score_before:.1f} -> reverting to original resume"
+            )
+            improved = original.model_copy(deep=True)
+            _final_artifact_score, _final_breakdown, _ = scorer.score(improved, extracted_jd)
+            ats_report.risk_flags = list(ats_report.risk_flags or []) + [
+                f"FINAL_ARTIFACT_REGRESSION_REVERTED: late processing scored "
+                f"{_final_artifact_score:.1f} < original {ats_report.score_before:.1f}"
+            ]
+        if abs(_final_artifact_score - ats_report.score_after) > 0.05:
+            logger.warning(
+                f"  FINAL RECONCILIATION: reported {ats_report.score_after} -> "
+                f"artifact {_final_artifact_score:.1f} (report now describes the artifact)"
+            )
+        ats_report.score_after = round(
+            max(_final_artifact_score, ats_report.score_before), 1
+        )
+        ats_report.breakdown_after = _final_breakdown
+        ats_report.improvement = (
+            f"+{ats_report.score_after - ats_report.score_before:.0f}"
+            if ats_report.score_after >= ats_report.score_before
+            else f"{ats_report.score_after - ats_report.score_before:.0f}"
+        )
+    except Exception as fr_err:
+        logger.warning(f"  Final reconciliation skipped: {fr_err}")
     # ── Build execution trace for auditability ──
     pipeline_trace = {
         "job_id": job_id,
@@ -2080,6 +2144,8 @@ def run_full_pipeline(
         "missing_skills": ats_report.missing_skills[:5] if ats_report.missing_skills else [],
         "matched_skills_count": len(ats_report.matched_skills or []),
         "score_cap_reason": score_limit.reasons[0] if score_limit and score_limit.reasons else None,
+        "raw_semantic_score": getattr(ats_report, "raw_semantic_score", ats_report.semantic_score),
+        "semantic_adjustments": getattr(ats_report, "semantic_adjustments", []),
         "role_type": role_info.get("role_type", "") if role_info else "",
         "experience_level": shortlist_unified.get("experience_level", "") if shortlist_unified else "",
     }

@@ -27,7 +27,6 @@ from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
 from ats_scoring.synonyms import are_synonyms, expand_keywords, get_synonyms
-from ats_scoring.probability import ShortlistPredictor
 from utils.config_loader import load_config, AppConfig
 from utils.logger import setup_logger
 from utils.models import (
@@ -211,6 +210,9 @@ class ATSScorer:
                         f"overall_similarity = {semantic_score}%"
                     )
 
+            raw_semantic_score = semantic_score  # Phase 4: preserve raw measurement
+            semantic_adjustments = []  # Phase 4: explicit, disclosed policy adjustments
+
             # -- Keyword overlap floor (tiered) ----------------
             kw_overlap = len(set(details_after["keywords"].get("matched", [])))
             skill_overlap = len(set(details_after.get("skills", {}).get("matched", [])))
@@ -218,24 +220,27 @@ class ATSScorer:
 
             # Tiered semantic floor based on overlap strength
             # NEVER allow semantic=0 when real overlap exists
-            if total_overlap >= 8 and semantic_score < 50:
+            if total_overlap >= 8 and semantic_score < 50:  # Phase 4: disclosed policy floor
                 logger.info(
                     f"  Semantic floor applied: {semantic_score}% -> 50% "
                     f"(overlap={total_overlap})"
                 )
                 semantic_score = 50.0
+                semantic_adjustments.append(f'overlap floor (overlap={total_overlap}): +{50.0-raw_semantic_score:.1f}')
             elif total_overlap >= 5 and semantic_score < 40:
                 logger.info(
                     f"  Semantic floor applied: {semantic_score}% -> 40% "
                     f"(overlap={total_overlap})"
                 )
                 semantic_score = 40.0
+                semantic_adjustments.append(f'overlap floor (overlap={total_overlap}): +{40.0-raw_semantic_score:.1f}')
             elif total_overlap >= 3 and semantic_score < 20:
                 logger.info(
                     f"  Semantic floor applied: {semantic_score}% -> 20% "
                     f"(overlap={total_overlap})"
                 )
                 semantic_score = 20.0
+                semantic_adjustments.append(f'overlap floor (overlap={total_overlap}): +{20.0-raw_semantic_score:.1f}')
 
             logger.info(f"  Semantic match: {semantic_score}%")
         except Exception as e:
@@ -326,19 +331,20 @@ class ATSScorer:
             penalties_applied=penalties_applied,
             decision=decision,
             semantic_score=semantic_score,
+            raw_semantic_score=round(raw_semantic_score, 1),
+            semantic_adjustments=semantic_adjustments,
             effort_level=effort,
             role_fit=role_fit,
         )
 
-        # Shortlist probability (safe -- never breaks pipeline)
-        try:
-            predictor = ShortlistPredictor()
-            prob = predictor.predict(report)
-            report.shortlist_probability = prob
-            prob_display = f"{prob['shortlist_probability']}%"
-        except Exception as e:
-            logger.warning(f"Probability prediction failed: {e}")
-            prob_display = "N/A"
+        # PHASE 4 (single shortlist source): the raw ShortlistPredictor value is
+        # no longer computed here. pipeline.unified_scoring (invoked once by
+        # pipeline.core) is THE canonical shortlist calculation; its result is
+        # stored in PipelineResult.shortlist_* and mirrored into
+        # ats_report.shortlist_probability for backward compatibility.
+        # ShortlistPredictor remains available in ats_scoring.probability for
+        # offline analysis/tests only.
+        prob_display = "canonical (unified_scoring)"
 
         logger.info(
             f"ATS SCORER -- {improvement_str} | "
@@ -1045,8 +1051,12 @@ class ATSScorer:
         
         Returns 0-100.
         """
-        if not resume.skills or not resume.experience:
-            return 40.0  # Baseline
+        # Phase 4 (scoring integrity): no experience bullets = no demonstrated
+        # skill usage. A neutral baseline fabricated evidence for empty resumes.
+        if not resume.experience:
+            return 0.0  # No professional experience -> no demonstrated usage
+        if not resume.skills:
+            return 0.0  # No declared skills -> nothing to demonstrate
 
         all_bullets_lower = " ".join(
             b.lower() for exp in resume.experience for b in exp.bullets
@@ -1127,7 +1137,9 @@ class ATSScorer:
             all_bullets.extend(proj.bullets)
 
         if not all_bullets:
-            return 30.0  # Baseline
+            # Phase 4 (scoring integrity): empty history -> no impact evidence.
+            # The old 30.0 baseline fabricated professional-impact credit.
+            return 0.0
 
         total_impact = 0
         impact_count = 0

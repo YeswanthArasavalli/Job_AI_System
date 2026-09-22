@@ -228,15 +228,18 @@ class ManualAnalyzer:
             logger.info(f"  Input name:  {original.contact.name}")
             logger.info(f"  Output name: {tailored.contact.name}")
 
-            # Step 3-5: Run unified pipeline (naturalize -> score -> improve -> guardrail)
-            from pipeline.core import run_full_pipeline
-            pipeline_result = run_full_pipeline(
+            # Step 3-5: CANONICAL ENGINE (Phase 3) - single analysis entry point.
+            # The dashboard's LLM-tailored resume is passed as the tailored base
+            # so tailoring depth is preserved; scoring/shortlist/truth are canonical.
+            from pipeline.service import analyze_tailored
+            pipeline_result = analyze_tailored(
                 original=original,
                 tailored=tailored,
-                extracted_jd=extracted_jd,
-                scorer=self.scorer,
-                job_id="manual_analysis",
+                jd=extracted_jd,
                 mode=mode,
+                job_id="manual_analysis",
+                config=self.config,
+                scorer=self.scorer,
             )
             ats_report = pipeline_result.ats_report
             improved = pipeline_result.improved
@@ -290,69 +293,48 @@ class ManualAnalyzer:
                 status = "NO_CHANGE"
                 status_message = "Current resume is already optimal for this JD. No changes needed."
 
-            result = {
-                "success": True,
-                "scores": {
-                    "before": ats_report.score_before,
-                    "after": ats_report.score_after,
-                    "improvement": ats_report.improvement,
-                    "semantic": ats_report.semantic_score,
-                },
-                "status": status,
-                "status_message": status_message,
-                "decision": ats_report.decision,
-                "effort": ats_report.effort_level,
-                "probability": ats_report.shortlist_probability,
-                "matched_skills": ats_report.matched_skills,
-                "missing_skills": ats_report.missing_skills,
-                "recommendations": ats_report.recommendations,
-                "next_actions": next_actions,
-                "risk_flags": ats_report.risk_flags,
-                "readability_score": readability,
-                "breakdown": {
-                    "before": ats_report.breakdown_before.model_dump(),
-                    "after": ats_report.breakdown_after.model_dump(),
-                },
-                # Tailored resume (raw alignment)
-                "tailored_resume_text": format_resume_text(tailored),
-                "tailored_resume_json": tailored.model_dump(),
-                # Improved resume (final optimized -- recommended)
-                "improved_resume_text": format_resume_text(improved),
-                "improved_resume_json": improved.model_dump(),
-                "jd_info": {
-                    "title": extracted_jd.job_title,
-                    "company": extracted_jd.company,
-                    "required_skills": extracted_jd.required_skills,
-                    "keywords": extracted_jd.keywords,
-                },
-                "pdf_path": pdf_path,
-                "target_plan": pipeline_result.target_plan,
-                # NEW: Role classification (Part 4 - Universal Role Engine)
-                "role_info": pipeline_result.role_info,
-                # NEW: Resume type detection (Part 10 - Intelligence)
-                "resume_type": pipeline_result.resume_type,
-                # NEW: Change explanations (Part 8 - Trust Layer)
-                "change_explanation": pipeline_result.change_explanation,
-                # NEW: Polish changes (Part 6 - Polish Engine)
-                "polish_changes": pipeline_result.polish_changes,
-                # NEW: Validation gate (Part 13 - Final Quality Check)
-                "validation_result": pipeline_result.validation_result,
-                # v6.0: Expose pipeline_result for canonical shortlist access
-                "pipeline_result": pipeline_result,
-                # v6.0: Canonical shortlist fields (same values as pipeline_result fields)
-                "canonical_shortlist_probability": pipeline_result.shortlist_probability,
-                "canonical_shortlist_band": pipeline_result.shortlist_band,
-                "canonical_shortlist_decision": pipeline_result.shortlist_decision,
-                "canonical_shortlist_reason": pipeline_result.shortlist_decision_reason,
-                "pipeline_trace": pipeline_result.pipeline_trace,
-            }
+            # CANONICAL packaging (Phase 3): single result contract from
+            # pipeline.service.package_result. Dashboard-specific extras
+            # (next_actions, PDF, tailored text) are appended below.
+            from pipeline.service import package_result
+            result = package_result(pipeline_result, mode)
 
-            logger.info(
-                f"MANUAL ANALYSIS COMPLETE | "
-                f"Score: {ats_report.score_before} -> {ats_report.score_after} | "
-                f"Decision: {ats_report.decision}"
+            # Build next actions (career assistant style) - dashboard UX layer
+            next_actions = []
+            if ats_report.missing_skills:
+                top_missing = ats_report.missing_skills[:3]
+                next_actions.append(f"Highlight experience with: {', '.join(top_missing)}")
+            if ats_report.semantic_score < 30:
+                next_actions.append("Align resume bullet points more closely with JD language")
+            if ats_report.decision == "IMPROVE":
+                next_actions.append("Consider adding relevant project work or certifications")
+            if ats_report.score_after < 50:
+                next_actions.append("Rewrite summary to mirror the target role description")
+
+            # Backward-compatible aliases for existing dashboard consumers
+            result["next_actions"] = next_actions
+            result["status_message"] = (
+                f"Resume improved by {result['scores']['after'] - result['scores']['before']:.0f} points."
+                if result["status"] == "IMPROVED"
+                else "Current resume is already optimal for this JD. No changes needed."
             )
+            result["probability"] = pipeline_result.shortlist_probability
+            result["scores"]["semantic"] = ats_report.semantic_score
+            result["tailored_resume_text"] = format_resume_text(tailored)
+            result["improved_resume_text"] = format_resume_text(pipeline_result.improved)
+            result["improved_resume_json"] = pipeline_result.improved.model_dump()
+            result["tailored_resume_json"] = tailored.model_dump()
+            result["pdf_path"] = pdf_path
+            result["target_plan"] = pipeline_result.target_plan
+            result["role_info"] = pipeline_result.role_info
+            result["resume_type"] = pipeline_result.resume_type
+            result["polish_changes"] = pipeline_result.polish_changes
 
+            # Canonical shortlist aliases (v6 names kept for existing tests)
+            result["canonical_shortlist_probability"] = pipeline_result.shortlist_probability
+            result["canonical_shortlist_band"] = pipeline_result.shortlist_band
+            result["canonical_shortlist_decision"] = pipeline_result.shortlist_decision
+            result["canonical_shortlist_reason"] = pipeline_result.shortlist_decision_reason
             return result
 
         except RuntimeError as e:

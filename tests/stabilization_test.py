@@ -162,13 +162,23 @@ def test_6_no_sample_leakage():
 
 
 def test_7_manual_mode_uses_pipeline():
-    """ManualAnalyzer calls run_full_pipeline internally."""
-    print("TEST 7: ManualAnalyzer uses run_full_pipeline...")
+    """ManualAnalyzer routes through the canonical engine (Phase 3 service)."""
+    print("TEST 7: ManualAnalyzer uses canonical engine...")
     import inspect
     from manual_mode import ManualAnalyzer
     source = inspect.getsource(ManualAnalyzer.analyze)
-    assert "run_full_pipeline" in source, "ManualAnalyzer doesn't use run_full_pipeline!"
-    print("  PASS: ManualAnalyzer.analyze() calls run_full_pipeline")
+    # Phase 3: the canonical entry is pipeline.service.analyze_tailored, which
+    # itself calls run_full_pipeline. Direct-call OR service-call are both valid;
+    # a self-contained reimplementation in manual_mode is not.
+    uses_canonical = (
+        "run_full_pipeline" in source or "analyze_tailored" in source
+    )
+    assert uses_canonical, "ManualAnalyzer doesn't use the canonical engine!"
+    # Verify the service contract still bottoms out in run_full_pipeline
+    import pipeline.service as svc
+    svc_src = inspect.getsource(svc)
+    assert "run_full_pipeline" in svc_src, "canonical service lost run_full_pipeline!"
+    print("  PASS: ManualAnalyzer.analyze() routes to the canonical engine")
 
 
 def test_8_controller_uses_pipeline():
