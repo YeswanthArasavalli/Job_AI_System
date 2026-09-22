@@ -313,6 +313,7 @@ class PipelineResult:
     quality_score: dict = None      # Structural quality evaluation (Part 2)
     hiring_simulation: dict = None  # Hiring Simulation Engine (Sreejita v1.0)
     content_intelligence: dict = None  # Content Quality + Truth + ATS engines (v4.5-v4.8)
+    decision_explanation: dict = None  # Phase 6B: structured decision explanation
 
     # ── CANONICAL SHORTLIST FIELDS (v6.0) ──
     # These are the ONLY source of truth. Do not read shortlist from
@@ -2138,6 +2139,29 @@ def run_full_pipeline(
         "experience_level": shortlist_unified.get("experience_level", "") if shortlist_unified else "",
     }
 
+    # -- PHASE 6B: structured decision explanation (evidence-grounded) ----
+    decision_explanation = None
+    try:
+        from pipeline.decision_explanation import build_decision_explanation
+        _pre = PipelineResult(
+            original=original, tailored=tailored, improved=improved,
+            extracted_jd=extracted_jd, ats_report=ats_report,
+            shortlist_probability=round(shortlist_probability_final, 1),
+            shortlist_band=shortlist_band_final,
+            shortlist_decision=shortlist_decision_final,
+            hiring_simulation=hiring_sim,
+            pipeline_trace={"experience_level": shortlist_unified.get("experience_level", "") if shortlist_unified else ""},
+        )
+        decision_explanation = build_decision_explanation(
+            decision=shortlist_decision_final,
+            decision_reason=shortlist_reason_final or ats_report.decision,
+            ats_report=ats_report,
+            pipeline_result=_pre,
+            original=original,
+            jd=extracted_jd,
+        )
+    except Exception as de_err:
+        logger.warning(f"Decision explanation skipped: {de_err}")
     return PipelineResult(
         original=original,
         tailored=tailored,
