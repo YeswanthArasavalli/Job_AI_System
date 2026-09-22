@@ -19,7 +19,7 @@ logger = setup_logger(__name__)
 
 @dataclass
 class ChangeRecord:
-    """A single tracked change to the resume."""
+    """A single tracked change to the resume (Phase 5B ledger schema)."""
     section: str          # "summary", "experience.0.bullets.2", "skills"
     change_type: str      # "keyword_injection", "verb_strengthening", "reorder", etc.
     before: str           # Original text (truncated)
@@ -27,6 +27,8 @@ class ChangeRecord:
     reason: str           # Human-readable explanation
     rule: str             # Which engine module made this change
     confidence: str       # "HIGH" / "MEDIUM" / "LOW"
+    evidence_source: str = "ORIGINAL_RESUME"   # ORIGINAL_RESUME / CANDIDATE_EVIDENCE / NOT_APPLICABLE
+    validation: str = "PENDING"                # PENDING / PASS / REJECTED (Truth Gate verdict)
 
     def to_dict(self) -> Dict:
         return {
@@ -37,6 +39,8 @@ class ChangeRecord:
             "reason": self.reason,
             "rule": self.rule,
             "confidence": self.confidence,
+            "evidence_source": self.evidence_source,
+            "validation": self.validation,
         }
 
 

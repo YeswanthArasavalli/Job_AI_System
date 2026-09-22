@@ -145,15 +145,16 @@ def main():
 
     # -- Phase 2+3: Unified Pipeline (Naturalize -> Score -> Improve -> Guardrail) --
 
-    from pipeline.core import run_full_pipeline
-    scorer = ATSScorer(config=config)
-
-    pipeline_result = run_full_pipeline(
+    # Phase 5F: CLI routes through the CANONICAL application service
+    # (same engine as app.py and dashboard.py; CLI keeps only presentation).
+    from pipeline.service import analyze_tailored
+    pipeline_result = analyze_tailored(
         original=original,
         tailored=tailored,
-        extracted_jd=extracted_jd,
-        scorer=scorer,
-        job_id="sample_001",
+        jd=extracted_jd,
+        mode="strict",
+        job_id="cli_analysis",
+        config=config,
     )
     ats_report = pipeline_result.ats_report
     improved = pipeline_result.improved
@@ -234,6 +235,11 @@ def main():
     print("\n" + "=" * 60)
     print("[OK] Phase 1 + 2 + 3 Complete!")
     print("=" * 60 + "\n")
+
+
+def cli_entry():
+    """Console-script entry point (Phase 5E packaging contract)."""
+    main()
 
 
 if __name__ == "__main__":

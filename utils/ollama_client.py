@@ -9,6 +9,8 @@ Provides:
 All modules MUST use this instead of importing ollama directly.
 """
 
+import json
+import re
 import time
 from typing import Optional
 import ollama
@@ -201,3 +203,55 @@ def call_ollama(
         f"{task} failed after {max_retries} attempts. "
         f"Last error: {last_error}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 5C: LLM output-integrity boundary
+# Raw LLM output never enters production state blindly. Callers route content
+# through validate_llm_output BEFORE applying it to a resume/JD.
+# ---------------------------------------------------------------------------
+
+def validate_llm_output(
+    content: str,
+    required_fields: Optional[list] = None,
+    allow_extra_fields: bool = True,
+) -> dict:
+    """Validate raw LLM output before downstream use (spec section 25).
+
+    Returns {"ok": bool, "stage": str, "error": Optional[str], "data": Any}.
+    Stages: EMPTY -> PARSE -> SCHEMA. Content truth is enforced downstream
+    by pipeline.truth_gate (the authoritative boundary).
+    """
+    # 1. Empty/partial detection — never treated as success
+    if content is None or not str(content).strip():
+        return {"ok": False, "stage": "EMPTY", "error": "empty response", "data": None}
+
+    text = str(content).strip()
+    # strip common markdown fences
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\r?\n?", "", text)
+        text = re.sub(r"\r?\n?```\s*$", "", text)
+
+    # 2. JSON parse
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        return {"ok": False, "stage": "PARSE", "error": f"malformed JSON: {e}", "data": None}
+
+    if not isinstance(data, dict):
+        return {"ok": False, "stage": "SCHEMA", "error": "response is not an object", "data": None}
+
+    # 3. Required-field schema check
+    missing = [f for f in (required_fields or []) if f not in data]
+    if missing:
+        return {"ok": False, "stage": "SCHEMA",
+                "error": f"missing required fields: {missing}", "data": data}
+
+    # 4. Extra-field policy (default: safely ignored)
+    if not allow_extra_fields and required_fields:
+        extra = [k for k in data.keys() if k not in required_fields]
+        if extra:
+            return {"ok": False, "stage": "SCHEMA",
+                    "error": f"unexpected fields: {extra}", "data": data}
+
+    return {"ok": True, "stage": "OK", "error": None, "data": data}

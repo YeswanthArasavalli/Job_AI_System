@@ -53,6 +53,17 @@ back-compat aliases) WITHOUT recomputation.
   explicit risk flags IMPROVEMENT_REGRESSION_REVERTED /
   FINAL_ARTIFACT_REGRESSION_REVERTED).
 
+## Truth governance (CURRENT, Phase 5A/5B)
+
+pipeline/truth_gate.py = authoritative boundary (see TRUTH_GOVERNANCE.md);
+core.py trust section delegates to it; change ledger stamped with verdicts.
+
+## Observability (CURRENT, Phase 5G/5H)
+
+Operational logs are PII-free (candidate_id/job_ref hashes; scrubbing at
+source call sites); pipeline_trace carries {engine, deterministic_engine,
+version, raw_semantic_score, semantic_adjustments, score_cap_reason, ...}.
+
 ## Known future consolidation (PLANNED, later phases)
 
 - main.py CLI migration to service

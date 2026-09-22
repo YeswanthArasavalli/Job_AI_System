@@ -437,8 +437,11 @@ def run_full_pipeline(
       - All changes tracked and explained (trust layer)
     """
     logger.info(f"PIPELINE CORE -- Starting for job {job_id} (mode={mode})")
-    logger.info(f"  Resume: {original.contact.name}")
-    logger.info(f"  JD: {extracted_jd.job_title} @ {extracted_jd.company}")
+    import hashlib as _hashlib
+    _cand_ref = _hashlib.sha256((original.contact.name or "").encode()).hexdigest()[:8]
+    logger.info(f"  Resume: candidate_id={_cand_ref}")
+    _jd_ref = _hashlib.sha256(((extracted_jd.job_title or "") + (extracted_jd.company or "")).encode()).hexdigest()[:8]
+    logger.info(f"  JD: job_ref={_jd_ref}")
 
     # -- STATELESS: Deep copy ALL inputs to prevent mutation leakage
     original = original.model_copy(deep=True)
@@ -1060,84 +1063,59 @@ def run_full_pipeline(
         _, _, fallback_details = scorer.score(tailored, extracted_jd)
         score_limit = _compute_score_limit(scorer, tailored, extracted_jd, fallback_details)
 
-    # -- PART 8: Strict trust rules -----------------------
+    # -- PART 8: Strict trust rules (Phase 5A: delegated to central Truth Gate)
+    # pipeline/truth_gate.py is THE authoritative boundary; core only applies
+    # the revert actions the verdict prescribes. No second truth implementation.
+    from pipeline.truth_gate import validate_candidate_representation, check_metrics
+    _orig_bullets_all = [b for e in original.experience for b in e.bullets]
+    _imp_bullets_all = [b for e in improved.experience for b in e.bullets]
+    _metric_violations = check_metrics(_orig_bullets_all, _imp_bullets_all)
+    _truth = validate_candidate_representation(original, improved, original_skills=list(original.skills or []))
     trust_issues = []
+    if _truth.violations:
+        trust_issues.extend(_truth.violations)
+    if _metric_violations:
+        trust_issues.extend(_metric_violations)
 
-    # 8a. Identity check (no hallucination)
-    if improved.contact.name != original.contact.name:
-        trust_issues.append(
-            f"IDENTITY: improved={improved.contact.name}, expected={original.contact.name}"
-        )
+    # Revert actions (unchanged semantics, now driven by the verdict):
+    if not _truth.identity_ok:
         improved.contact = original.contact.model_copy(deep=True)
+        logger.warning("  TRUTH GATE: identity fields restored from original")
 
-    # 8b. No fake skills — but allow skills from tailored (LLM-identified)
-    # AND allow compound expansions (Python → Python (pandas, numpy))
-    original_skills_lower = {s.lower() for s in original.skills}
-    tailored_skills_lower = {s.lower() for s in tailored.skills}
-    improved_skills_lower = {s.lower() for s in improved.skills}
-
-    # Build evidence set from projects and experience
-    evidence_text = " ".join(
-        t.lower() for p in original.projects for t in p.technologies
-    ) + " " + " ".join(
-        b.lower() for exp in original.experience for b in exp.bullets
-    ) + " " + " ".join(
-        b.lower() for p in original.projects for b in p.bullets
-    )
-
-    allowed_skills = original_skills_lower | tailored_skills_lower
-    new_skills = improved_skills_lower - allowed_skills
-
-    truly_fake = set()
-    for skill in new_skills:
-        # Accept if it's a compound expansion of an existing skill
-        # e.g., "python (pandas, numpy)" contains "python" which is original
-        parent_exists = any(orig in skill for orig in original_skills_lower if len(orig) > 2)
-        # Accept if evidenced in projects/experience
-        in_evidence = skill in evidence_text or any(
-            part in evidence_text for part in skill.split() if len(part) > 3
-        )
-        if not parent_exists and not in_evidence:
-            truly_fake.add(skill)
-
-    if truly_fake:
-        trust_issues.append(
-            f"FAKE_SKILLS: {list(truly_fake)[:3]} not in original resume"
-        )
+    if _truth.violations and any(v.startswith(("UNSUPPORTED_SKILL", "EMPLOYMENT_INFLATION")) for v in _truth.violations):
         improved.skills = original.skills[:]
-        logger.warning(f"  TRUST: Restored original skills (removed {len(truly_fake)} fabricated)")
+        logger.warning(f"  TRUTH GATE: restored original skills ({len(_truth.violations)} violations)")
         tracker.record(
             section="skills",
             change_type="fake_skill_removal",
-            before=f"{list(truly_fake)[:3]}",
+            before=f"{_truth.violations[:3]}",
             after="Reverted to original skills",
-            reason="Fabricated skills detected — not in original resume or evidence",
-            rule="pipeline.trust_rules",
+            reason="Truth Gate rejected unsupported skills (not in candidate evidence)",
+            rule="pipeline.truth_gate",
             confidence="HIGH",
         )
 
-    # 8c. Score consistency (no degradation from original)
-    final_score = ats_report.score_after  # Reuse already-computed score
-
-    if final_score < ats_report.score_before - 2:
-        trust_issues.append(
-            f"SCORE_DEGRADATION: final={final_score} < original={ats_report.score_before}"
-        )
-
-    # 8d. Decision consistency (no contradiction)
-    decision = ats_report.decision
-    score = ats_report.score_after
-    if score >= 70 and decision == "SKIP":
-        trust_issues.append(f"CONTRADICTION: score={score} but decision=SKIP")
-    if score < 30 and decision == "APPLY":
-        trust_issues.append(f"CONTRADICTION: score={score} but decision=APPLY")
-
-    # 8e. No score inflation beyond realistic cap
-    if final_score > score_limit.max_possible_score + 1:
-        trust_issues.append(
-            f"INFLATION: final={final_score} exceeds max={score_limit.max_possible_score}"
-        )
-
+    if _metric_violations:
+        # Revert any bullet that introduced numbers absent from the original
+        allowed_nums = set()
+        import re as _re_metrics
+        for b in _orig_bullets_all:
+            allowed_nums |= set(_re_metrics.findall(r"\d+(?:\.\d+)?\s*[%x+]?", b.lower()))
+        for ei, exp in enumerate(improved.experience):
+            if ei < len(original.experience):
+                for bi, b in enumerate(exp.bullets):
+                    nums = set(_re_metrics.findall(r"\d+(?:\.\d+)?\s*[%x+]?", b.lower()))
+                    if nums - allowed_nums and bi < len(original.experience[ei].bullets):
+                        exp.bullets[bi] = original.experience[ei].bullets[bi]
+                        tracker.record(
+                            section=f"experience.{ei}.bullets.{bi}",
+                            change_type="metric_fabrication_revert",
+                            before=b[:100],
+                            after=original.experience[ei].bullets[bi][:100],
+                            reason="Truth Gate rejected fabricated metric",
+                            rule="pipeline.truth_gate.check_metrics",
+                            confidence="HIGH",
+                        )
     # -- NEW: Trust Validator (full structural check) ----------
     try:
         structural_violations = TrustValidator.validate_changes(
@@ -1146,6 +1124,13 @@ def run_full_pipeline(
         trust_issues.extend(structural_violations)
     except Exception as e:
         logger.warning(f"  Trust validator skipped: {e}")
+
+    # Phase 5B: mark ledger validation state from the Truth Gate verdict
+    for rec in tracker.changes:
+        if trust_issues:
+            rec.validation = "REJECTED"
+        else:
+            rec.validation = "PASS"
 
     if trust_issues:
         for issue in trust_issues:
@@ -2144,6 +2129,9 @@ def run_full_pipeline(
         "missing_skills": ats_report.missing_skills[:5] if ats_report.missing_skills else [],
         "matched_skills_count": len(ats_report.matched_skills or []),
         "score_cap_reason": score_limit.reasons[0] if score_limit and score_limit.reasons else None,
+        "engine": "pipeline.core",
+        "deterministic_engine": True,
+        "version": "6.0.0",
         "raw_semantic_score": getattr(ats_report, "raw_semantic_score", ats_report.semantic_score),
         "semantic_adjustments": getattr(ats_report, "semantic_adjustments", []),
         "role_type": role_info.get("role_type", "") if role_info else "",

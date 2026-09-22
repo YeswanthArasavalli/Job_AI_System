@@ -1,0 +1,16 @@
+app
+ats_scoring
+dashboard
+database
+export
+insights
+jd_processor
+learning
+main
+manual_mode
+pdf_generator
+pipeline
+resume_engine
+resume_parser
+scraper
+utils

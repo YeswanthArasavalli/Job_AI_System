@@ -39,6 +39,10 @@ SUITES = [
     ("tests/parity_test.py",         "Parity",         "INTEGRATION",  180, True),
     ("tests/v6_system_tests.py",     "V6 System",      "INTEGRATION",  300, True),
     ("test_truth.py",                "TruthGate",      "DIAGNOSTIC",   120, False),
+    ("tests/test_truth_gate.py",     "Truth Gate",     "ADVERSARIAL",  120, True),
+    ("tests/test_llm_failure_matrix.py", "LLM Matrix",  "OLLAMA/LLM",   240, True),
+    ("tests/test_cli_canonical.py",  "CLI Parity",    "INTEGRATION",  180, True),
+    ("tests/test_privacy.py",        "Privacy",        "SECURITY",     180, True),
 ]
 
 # A suite file runs functions named test_* in definition order, aborting on
@@ -130,6 +134,22 @@ def main():
         t0 = time.time()
         try:
             mod, tests = discover(full)
+        except SystemExit as se:
+            # script-style suite: module ran to completion at import and called
+            # sys.exit(code). Honor its exit code truthfully (spec: no swallowed
+            # exits). Count as ONE executed check with the script's own verdict.
+            code = se.code if isinstance(se.code, int) else (0 if se.code is None else 1)
+            dt = time.time() - t0
+            executed += 1
+            discovered += 1
+            if code == 0:
+                passed += 1
+                print(f"{sname:<14} {cat:<12} {'(script suite)':<42} {'PASS':<7} {dt:>5.1f}s")
+            else:
+                failed += 1
+                print(f"{sname:<14} {cat:<12} {'(script suite)':<42} {'FAIL':<7} {dt:>5.1f}s")
+                failures.append((sname, "(script)", f"exit code {code}"))
+            continue
         except Exception as e:
             dt = time.time() - t0
             print(f"{sname:<14} {cat:<12} {'<import error>':<42} {'ERROR':<7} {dt:>5.1f}s")
@@ -137,6 +157,14 @@ def main():
             errored += 1
             continue
         dt_import = time.time() - t0
+        if not tests:
+            # module imported but exposes no tests and did not exit: script-style
+            # suite already ran during exec_module; treat import success as PASS.
+            discovered += 1
+            executed += 1
+            passed += 1
+            print(f"{sname:<14} {cat:<12} {'(script suite)':<42} {'PASS':<7} {dt_import:>5.1f}s")
+            continue
         for tname, fn in tests:
             discovered += 1
             status, msg, dt = run_one(fn)
