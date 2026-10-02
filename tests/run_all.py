@@ -43,6 +43,7 @@ SUITES = [
     ("tests/test_llm_failure_matrix.py", "LLM Matrix",  "OLLAMA/LLM",   240, True),
     ("tests/test_cli_canonical.py",  "CLI Parity",    "INTEGRATION",  180, True),
     ("tests/test_privacy.py",        "Privacy",        "SECURITY",     180, True),
+    ("tests/test_decision_explanation.py", "Explanation", "ADVERSARIAL", 300, True),
 ]
 
 # A suite file runs functions named test_* in definition order, aborting on
@@ -54,14 +55,17 @@ SUITES = [
 
 
 def discover(suite_path):
-    """Import suite module, return ordered [(name, callable)]."""
+    """Import suite module, return ordered [(name, callable)].
+
+    NOTE: SystemExit from script-style suites that self-run at import
+    (checks at module level + sys.exit(code)) MUST propagate — caller in
+    main() honors the real exit code (spec: runner truthfulness, no fake
+    green). Do not swallow it here.
+    """
     mod_name = os.path.splitext(os.path.basename(suite_path))[0]
     spec = importlib.util.spec_from_file_location(f"audit_suite_{mod_name}", suite_path)
     mod = importlib.util.module_from_spec(spec)
-    try:
-        spec.loader.exec_module(mod)  # __main__ guard prevents self-run
-    except SystemExit:
-        pass
+    spec.loader.exec_module(mod)  # __main__ guard prevents self-run
     tests = []
     for name, obj in vars(mod).items():
         if name.startswith("test_") and inspect.isfunction(obj) and obj.__module__ == mod.__name__:

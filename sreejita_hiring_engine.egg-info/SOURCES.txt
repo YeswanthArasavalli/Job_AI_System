@@ -35,6 +35,7 @@ pipeline/career_agent.py
 pipeline/content_quality.py
 pipeline/controller.py
 pipeline/core.py
+pipeline/decision_explanation.py
 pipeline/hiring_simulation.py
 pipeline/ingestion.py
 pipeline/job_monitor.py

@@ -2139,30 +2139,7 @@ def run_full_pipeline(
         "experience_level": shortlist_unified.get("experience_level", "") if shortlist_unified else "",
     }
 
-    # -- PHASE 6B: structured decision explanation (evidence-grounded) ----
-    decision_explanation = None
-    try:
-        from pipeline.decision_explanation import build_decision_explanation
-        _pre = PipelineResult(
-            original=original, tailored=tailored, improved=improved,
-            extracted_jd=extracted_jd, ats_report=ats_report,
-            shortlist_probability=round(shortlist_probability_final, 1),
-            shortlist_band=shortlist_band_final,
-            shortlist_decision=shortlist_decision_final,
-            hiring_simulation=hiring_sim,
-            pipeline_trace={"experience_level": shortlist_unified.get("experience_level", "") if shortlist_unified else ""},
-        )
-        decision_explanation = build_decision_explanation(
-            decision=shortlist_decision_final,
-            decision_reason=shortlist_reason_final or ats_report.decision,
-            ats_report=ats_report,
-            pipeline_result=_pre,
-            original=original,
-            jd=extracted_jd,
-        )
-    except Exception as de_err:
-        logger.warning(f"Decision explanation skipped: {de_err}")
-    return PipelineResult(
+    _result = PipelineResult(
         original=original,
         tailored=tailored,
         improved=improved,
@@ -2191,6 +2168,24 @@ def run_full_pipeline(
         # ── EXECUTION TRACE ──
         pipeline_trace=pipeline_trace,
     )
+
+    # -- PHASE 6B: structured decision explanation (evidence-grounded) ----
+    # Assembled from the FINAL canonical result — real validation_result and
+    # pipeline_trace, never a stand-in. No post-hoc LLM generation (spec §35).
+    try:
+        from pipeline.decision_explanation import build_decision_explanation
+        _result.decision_explanation = build_decision_explanation(
+            decision=_result.shortlist_decision,
+            decision_reason=_result.shortlist_decision_reason or ats_report.decision,
+            ats_report=ats_report,
+            pipeline_result=_result,
+            original=original,
+            jd=extracted_jd,
+        ).to_dict()
+    except Exception as de_err:
+        logger.warning(f"Decision explanation skipped: {de_err}")
+
+    return _result
 
 
 def _compute_why_not_90(

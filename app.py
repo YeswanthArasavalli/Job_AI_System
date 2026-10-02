@@ -425,6 +425,8 @@ def run_analysis(resume: StructuredResume, jd: ExtractedJD, mode: str):
         "shortlist_decision": pipeline_result.shortlist_decision,
         "interpretation": interpretation,
         "pipeline_trace": pipeline_result.pipeline_trace,
+        # Phase 6B: structured, evidence-grounded explanation of the decision
+        "decision_explanation": pipeline_result.decision_explanation,
         # Pipeline-native data (for parity with dashboard)
         "pipeline_result": pipeline_result,
     }

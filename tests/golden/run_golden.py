@@ -143,6 +143,55 @@ def run_case(name, fn, mode="strict"):
               impm >= tail - 0.5,
               f"improvement regressed: {tail} -> {impm} (Phase 4 policy must handle)")
 
+    # ---- PHASE 6C: archetype x role-category invariants (H-Q, spec §38-42) ----
+    # Invariant-based only: gap detection, no fabricated experience, no
+    # invented skills, evidence consistency. No brittle numeric expectations.
+    elif name in _6C_FIXTURES:
+        import re as _re
+        check(name, "no_invented_skills",
+              set(s.lower() for s in improved_skills_not_in(resume, improved)) ==
+              set(), f"skills invented: {improved_skills_not_in(resume, improved)}")
+        de = r.decision_explanation or {}
+        check(name, "explanation_present", bool(r.decision_explanation),
+              "6B explanation not attached to pipeline result")
+        toks = lambda text: set(_re.findall(r"[a-z0-9+#]+", text.lower()))
+        resume_tokens = toks(" ".join(
+            [resume.summary or "", *orig["skills"], *orig["bullets"],
+             *[t for p in resume.projects for t in (p.technologies or [])],
+             *[b for p in resume.projects for b in p.bullets]]))
+        # Evidence consistency (6B path): STRONG may only be claimed when the
+        # skill's own text appears in the ORIGINAL resume — never from the JD.
+        strong = [e["skill"] for e in de.get("evidence", []) if e["status"] == "STRONG"]
+        bad = [s for s in strong if s.split()[0].lower() not in resume_tokens]
+        check(name, "evidence_strong_from_resume_only", not bad,
+              f"STRONG without resume evidence: {bad}")
+        # Gap detection: required skills with ZERO token presence anywhere in
+        # the resume must be reported missing by ATS or the evidence engine.
+        reported = ({m.lower() for m in r.ats_report.missing_skills}
+                    | {m.lower() for m in de.get("missing_requirements", [])}
+                    | {e["skill"].lower() for e in de.get("evidence", [])
+                       if e["status"] == "EXPLICITLY_MISSING"})
+        is_reported = lambda s: any(s.lower() in rep or rep in s.lower()
+                                    for rep in reported)
+        absent = [s for s in (jd.required_skills or [])
+                  if not any(t in resume_tokens for t in toks(s))]
+        missed = [s for s in absent if not is_reported(s)]
+        check(name, "absent_required_reported", not missed,
+              f"genuinely-absent JD skills not reported: {missed}")
+        if name == "L_data_engineer":
+            check(name, "airflow_gap_detected", is_reported("airflow"),
+                  f"airflow (absent from resume) not reported missing: {reported}")
+        elif name == "M_ml_engineer_gaps":
+            infra = [x for x in ("kubernetes", "mlops", "aws") if is_reported(x)]
+            check(name, "infra_gaps_detected", len(infra) >= 2,
+                  f"infra gaps under-reported: {reported}")
+        elif name in ("O_devops", "Q_quant_truth_attack"):
+            # JD-only tech must never appear in the candidate's skills section
+            jd_only = {s.lower() for s in jd.required_skills} - {s.lower() for s in resume.skills}
+            overlap = jd_only & {s.lower() for s in improved.skills}
+            check(name, "no_jd_only_skills_claimed", overlap == set(),
+                  f"JD-only skills appeared: {overlap}")
+
     # ---- DETERMINISM (canonical repeat) ----
     r2 = run_full_pipeline(
         original=resume, tailored=resume.model_copy(deep=True),
@@ -152,6 +201,12 @@ def run_case(name, fn, mode="strict"):
           r.pipeline_hash == r2.pipeline_hash and
           flatten(r2.improved)["bullets"] == imp["bullets"],
           "repeat run diverged")
+
+
+_6C_FIXTURES = {"H_fresh_grad", "I_career_switcher", "J_senior_ic",
+                "K_engineering_manager", "L_data_engineer", "M_ml_engineer_gaps",
+                "N_business_analyst", "O_devops", "P_frontend",
+                "Q_quant_truth_attack"}
 
 
 def improved_skills_not_in(original, improved):
@@ -173,9 +228,14 @@ def extract_numbers(bullets):
 
 
 def main():
+    # A-G first (legacy set, expectations unchanged), then 6C archetypes H-Q.
     order = ["A_strong_aligned", "B_weak_misaligned", "C_no_experience",
              "D_truth_attack", "E_metric_protection", "F_identity_protection",
-             "G_improvement_regression"]
+             "G_improvement_regression",
+             "H_fresh_grad", "I_career_switcher", "J_senior_ic",
+             "K_engineering_manager", "L_data_engineer", "M_ml_engineer_gaps",
+             "N_business_analyst", "O_devops", "P_frontend",
+             "Q_quant_truth_attack"]
     for name in order:
         t0 = __import__("time").time()
         run_case(name, FIXTURES[name])
